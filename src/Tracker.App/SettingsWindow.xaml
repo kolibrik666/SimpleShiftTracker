@@ -1,0 +1,21 @@
+<Window x:Class="Tracker.App.SettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Settings" Width="570" SizeToContent="Height" ResizeMode="NoResize" WindowStartupLocation="CenterOwner">
+    <StackPanel Margin="28">
+        <TextBlock Text="Your hourly rate" FontSize="25" FontWeight="SemiBold" />
+        <TextBlock Text="Changes apply to new shifts. Saved shifts keep their rate." Style="{StaticResource Muted}" TextWrapping="Wrap" Margin="0,8,0,22" />
+        <TextBlock Text="Euros per hour" Style="{StaticResource SectionLabel}" Margin="0,0,0,8" />
+        <TextBox x:Name="RateInput" Width="180" HorizontalAlignment="Left" AutomationProperties.Name="Hourly rate in euros" FontSize="22" />
+        <TextBlock x:Name="ErrorText" Foreground="{DynamicResource Danger}" TextWrapping="Wrap" Margin="0,10,0,0" />
+        <Border Height="1" Background="{DynamicResource Edge}" Margin="0,20,0,20" />
+        <TextBlock Text="Stored on this PC" FontWeight="SemiBold" />
+        <TextBlock Text="All shifts are saved in this SQLite database. To back it up, close the app and copy the file." Style="{StaticResource Muted}" TextWrapping="Wrap" Margin="0,8,0,10" />
+        <TextBox x:Name="DatabasePathText" IsReadOnly="True" TextWrapping="Wrap" FontSize="12" AutomationProperties.Name="Database location" />
+        <TextBlock x:Name="ZoneText" Style="{StaticResource Muted}" Margin="0,10,0,0" />
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,26,0,0">
+            <Button Content="Cancel" IsCancel="True" MinWidth="100" Margin="0,0,10,0" />
+            <Button Content="Save rate" Click="SaveRate" Style="{StaticResource PrimaryButton}" MinWidth="120" IsDefault="True" />
+        </StackPanel>
+    </StackPanel>
+</Window>

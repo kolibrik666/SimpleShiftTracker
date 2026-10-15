@@ -1,0 +1,12 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Tracker.App/Tracker.App.csproj" />
+    <Project Path="src/Tracker.Core/Tracker.Core.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Tracker.Tests/Tracker.Tests.csproj" />
+  </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/Tracker.UiSmoke/Tracker.UiSmoke.csproj" />
+  </Folder>
+</Solution>

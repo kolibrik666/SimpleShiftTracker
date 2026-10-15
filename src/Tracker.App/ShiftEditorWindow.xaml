@@ -1,0 +1,49 @@
+<Window x:Class="Tracker.App.ShiftEditorWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="{Binding Title}" Width="790" Height="730" MinWidth="750" MinHeight="620" WindowStartupLocation="CenterOwner">
+    <Grid Margin="28">
+        <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+        <StackPanel Margin="0,0,0,22">
+            <TextBlock Text="{Binding Title}" FontSize="25" FontWeight="SemiBold" />
+            <TextBlock Text="{Binding Subtitle}" Style="{StaticResource Muted}" Margin="0,6,0,0" />
+        </StackPanel>
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+            <StackPanel Margin="0,0,8,0">
+                <Border Style="{StaticResource Card}" Padding="20">
+                    <Grid>
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="20" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                        <ContentControl Content="{Binding Start}" /><ContentControl Grid.Column="2" Content="{Binding End}" />
+                    </Grid>
+                </Border>
+                <DockPanel Margin="0,22,0,12">
+                    <Button DockPanel.Dock="Right" Content="+  Add break" Command="{Binding AddBreakCommand}" Style="{StaticResource SmallButton}" />
+                    <TextBlock Text="Breaks" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center" />
+                </DockPanel>
+                <TextBlock Text="No breaks. The full shift counts as worked time." Style="{StaticResource Muted}" Margin="0,0,0,12" Visibility="{Binding HasNoBreaks, Converter={StaticResource BoolVisibility}}" />
+                <ItemsControl ItemsSource="{Binding Breaks}"><ItemsControl.ItemTemplate><DataTemplate>
+                    <Border Style="{StaticResource Card}" Padding="20" Margin="0,0,0,12"><StackPanel>
+                        <DockPanel Margin="0,0,0,12">
+                            <Button DockPanel.Dock="Right" Content="Remove" Command="{Binding DataContext.RemoveBreakCommand, RelativeSource={RelativeSource AncestorType=Window}}" CommandParameter="{Binding}" Style="{StaticResource SmallButton}" Foreground="{DynamicResource Danger}" />
+                            <TextBlock Text="{Binding Title}" FontWeight="SemiBold" VerticalAlignment="Center" />
+                        </DockPanel>
+                        <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="20" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                            <ContentControl Content="{Binding Start}" /><ContentControl Grid.Column="2" Content="{Binding End}" />
+                        </Grid>
+                    </StackPanel></Border>
+                </DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+            </StackPanel>
+        </ScrollViewer>
+        <StackPanel Grid.Row="2" Margin="0,20,0,0">
+            <TextBlock Text="{Binding Error}" Foreground="{DynamicResource Danger}" TextWrapping="Wrap" Margin="0,0,0,12" Visibility="{Binding HasError, Converter={StaticResource BoolVisibility}}" />
+            <Border Background="{DynamicResource AccentTint}" CornerRadius="8" Padding="16" Margin="0,0,0,18"><StackPanel>
+                <TextBlock Text="{Binding Preview}" FontSize="17" FontWeight="SemiBold" TextWrapping="Wrap" />
+                <TextBlock Text="{Binding RateLabel}" Style="{StaticResource Muted}" Margin="0,6,0,0" />
+            </StackPanel></Border>
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button Content="Cancel" IsCancel="True" MinWidth="100" Margin="0,0,10,0" />
+                <Button Content="Save shift" Command="{Binding SaveCommand}" Style="{StaticResource PrimaryButton}" MinWidth="136" IsDefault="True" />
+            </StackPanel>
+        </StackPanel>
+    </Grid>
+</Window>
