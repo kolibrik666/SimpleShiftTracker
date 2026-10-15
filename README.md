@@ -16,6 +16,16 @@ The unpacked release is also in `artifacts/publish/win-x64/`. Keep its supportin
 - Closing the app, signing out, shutting down Windows, or sleeping the PC pauses an unfinished shift. Reopening or waking leaves it paused. Minimizing keeps it running.
 - Only one shift can be unfinished at a time.
 
+## Minimize to the system tray
+
+Click **Minimize** to hide the window and remove its taskbar button. Your shift keeps running and saving checkpoints while the app is in the Windows notification area (the tray, usually under the **^ hidden icons** panel).
+
+Click the tray icon to restore the window, or right-click it and choose **Open Shift Tracker**. Launching the app again also restores the existing window. A maximized window returns maximized.
+
+Right-click the tray icon and choose **Exit** to pause/save your unfinished shift and quit. The window's **X** button still closes the app and pauses the shift. Windows controls whether the tray icon is in the hidden-icons panel or shown beside the clock.
+
+This update uses the same database path and schema. Keep your existing `tracker.db`; replacing the application files preserves your recorded shifts and saved hourly rates.
+
 Use the month arrows or date picker to browse your history. **This month** returns to the current month. The totals show worked time to the second and estimated gross earnings. Hours do not wrap at 24.
 
 ## Correct your history

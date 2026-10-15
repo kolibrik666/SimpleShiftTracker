@@ -1,7 +1,5 @@
 using System.IO;
 using System.Globalization;
-using System.Security.Cryptography;
-using System.Text;
 using System.Windows;
 using System.Windows.Media;
 using System.Windows.Markup;
@@ -15,6 +13,7 @@ namespace Tracker.App;
 public partial class App : Application
 {
     private Mutex? instanceMutex;
+    private SingleInstanceActivation? instanceActivation;
     private bool ownsMutex;
     private string? themeOverride;
     internal static string DataDirectory { get; private set; } = "";
@@ -38,14 +37,20 @@ public partial class App : Application
                 else throw new ArgumentException("Supported options: --data-dir <folder> and --theme <light|dark>.");
             }
             DataDirectory = Path.TrimEndingDirectorySeparator(Path.GetFullPath(DataDirectory));
-            var identity = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(DataDirectory.ToUpperInvariant())))[..24];
+            var identity = SingleInstanceActivation.IdentityFor(DataDirectory);
             instanceMutex = new Mutex(true, @"Local\SimpleShiftTracker-" + identity, out ownsMutex);
             if (!ownsMutex)
             {
-                MessageBox.Show("Shift Tracker is already open for this data folder. Switch to its existing window.", "Shift Tracker", MessageBoxButton.OK, MessageBoxImage.Information);
+                if (!SingleInstanceActivation.TryRequestRestore(identity))
+                    MessageBox.Show("Shift Tracker is already open for this data folder. Switch to its existing window or restore it from the tray icon.", "Shift Tracker", MessageBoxButton.OK, MessageBoxImage.Information);
                 Shutdown();
                 return;
             }
+            instanceActivation = new SingleInstanceActivation(identity, () =>
+            {
+                if (!Dispatcher.HasShutdownStarted && !Dispatcher.HasShutdownFinished)
+                    Dispatcher.BeginInvoke(() => (MainWindow as MainWindow)?.RestoreFromTray());
+            });
             ApplyPalette();
             SystemEvents.UserPreferenceChanged += PreferenceChanged;
             var database = new TrackerDatabase(Path.Combine(DataDirectory, "tracker.db"));
@@ -112,6 +117,7 @@ public partial class App : Application
     protected override void OnExit(ExitEventArgs e)
     {
         SystemEvents.UserPreferenceChanged -= PreferenceChanged;
+        instanceActivation?.Dispose();
         if (ownsMutex) instanceMutex?.ReleaseMutex();
         instanceMutex?.Dispose();
         base.OnExit(e);

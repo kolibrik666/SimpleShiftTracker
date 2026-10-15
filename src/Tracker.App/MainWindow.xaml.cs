@@ -15,6 +15,10 @@ public partial class MainWindow : Window
     private readonly TrackerDatabase database;
     private readonly MainViewModel viewModel;
     private readonly DispatcherTimer timer;
+    private readonly SystemTrayIcon trayIcon;
+    private WindowState previousVisibleState = WindowState.Normal;
+    private bool restoringFromTray;
+    private bool closed;
     private DateTime lastCheckpoint;
     private bool storageErrorShown;
 
@@ -29,7 +33,59 @@ public partial class MainWindow : Window
         lastCheckpoint = service.NowUtc;
         timer = new DispatcherTimer(TimeSpan.FromSeconds(1), DispatcherPriority.Background, Tick, Dispatcher);
         SystemEvents.PowerModeChanged += PowerModeChanged;
+        trayIcon = new SystemTrayIcon(
+            () => Dispatcher.BeginInvoke(RestoreFromTray),
+            () => Dispatcher.BeginInvoke(ExitFromTray));
     }
+
+    internal bool IsTrayIconVisible => trayIcon.IsVisible;
+
+    protected override void OnStateChanged(EventArgs e)
+    {
+        base.OnStateChanged(e);
+        if (restoringFromTray || closed) return;
+        if (WindowState != WindowState.Minimized)
+        {
+            previousVisibleState = WindowState;
+            return;
+        }
+        if (trayIcon is null) return;
+
+        try
+        {
+            trayIcon.Show();
+            ShowInTaskbar = false;
+            Hide();
+        }
+        catch (Exception exception)
+        {
+            App.Log(exception);
+            RestoreFromTray();
+            viewModel.Notify("The app could not minimize to the tray. Please try again.", true);
+        }
+    }
+
+    internal void RestoreFromTray()
+    {
+        if (closed) return;
+        var restoreState = previousVisibleState;
+        restoringFromTray = true;
+        try
+        {
+            ShowInTaskbar = true;
+            Show();
+            WindowState = restoreState;
+            Activate();
+        }
+        finally { restoringFromTray = false; }
+        trayIcon.Hide();
+        Dispatcher.BeginInvoke(() =>
+        {
+            if (!closed && IsVisible) Focus();
+        }, DispatcherPriority.Input);
+    }
+
+    internal void ExitFromTray() => Close();
 
     private void Tick(object? sender, EventArgs e)
     {
@@ -120,6 +176,7 @@ public partial class MainWindow : Window
         {
             App.Log(exception);
             e.Cancel = true;
+            RestoreFromTray();
             MessageBox.Show(this, "Your shift could not be paused and saved.\n\n" + UiErrors.Describe(exception) + "\n\nResolve the issue and close the app again.", "Unable to save shift", MessageBoxButton.OK, MessageBoxImage.Error);
         }
         base.OnClosing(e);
@@ -127,8 +184,10 @@ public partial class MainWindow : Window
 
     protected override void OnClosed(EventArgs e)
     {
+        closed = true;
         timer.Stop();
         SystemEvents.PowerModeChanged -= PowerModeChanged;
+        trayIcon.Dispose();
         base.OnClosed(e);
     }
 }
