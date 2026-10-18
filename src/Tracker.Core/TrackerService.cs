@@ -181,6 +181,49 @@ public sealed class TrackerService(TrackerDatabase database, TimeProvider? clock
         }
     }
 
+    public ShiftSnapshot SaveActiveShift(ActiveShiftEdit edit)
+    {
+        lock (gate)
+        {
+            using var db = database.Open();
+            using var transaction = db.Database.BeginTransaction();
+            var shift = db.Shifts.Include(s => s.WorkIntervals).SingleOrDefault(s => s.Id == edit.Original.Id)
+                ?? throw new TrackerValidationException("This shift no longer exists.");
+            var current = shift.Snapshot();
+            // Checkpoints may advance while the editor is open; a pause, recovery,
+            // resume, or another time edit must never be overwritten by a stale form.
+            if (current.EndedUtc is not null || current.StartedUtc != edit.Original.StartedUtc ||
+                !current.WorkPeriods.SequenceEqual(edit.Original.WorkPeriods))
+                throw new TrackerValidationException("This shift changed while you were editing. Cancel and reopen the editor to use its latest times.");
+            var now = NowUtc;
+            var normalized = ShiftValidation.NormalizeActive(edit with { Original = current }, now);
+            if (db.Shifts.Any(s => s.Id != shift.Id && (s.EndedUtc == null || s.EndedUtc > normalized.StartedUtc)))
+                throw new TrackerValidationException("This time overlaps another shift. Correct that shift first.");
+
+            db.WorkIntervals.RemoveRange(shift.WorkIntervals);
+            shift.WorkIntervals.Clear();
+            // Release the unique open-interval index before inserting its replacement.
+            // Both saves belong to this transaction, so a failure restores the old times.
+            db.SaveChanges();
+            var cursor = normalized.StartedUtc;
+            foreach (var pause in normalized.Breaks)
+            {
+                if (pause.StartedUtc > cursor)
+                    shift.WorkIntervals.Add(new() { StartedUtc = cursor, EndedUtc = pause.StartedUtc });
+                cursor = pause.EndedUtc;
+            }
+            // A zero-length final interval retains when a paused shift's ongoing
+            // break began, even if all its worked time was removed.
+            shift.WorkIntervals.Add(new() { StartedUtc = cursor,
+                EndedUtc = current.State == ShiftState.Running ? null : normalized.EndedUtc });
+            shift.StartedUtc = normalized.StartedUtc;
+            shift.LastCheckpointUtc = now;
+            db.SaveChanges();
+            transaction.Commit();
+            return shift.Snapshot();
+        }
+    }
+
     public void DeleteShift(Guid id)
     {
         lock (gate)

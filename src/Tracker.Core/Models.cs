@@ -38,6 +38,9 @@ public sealed record ShiftSnapshot(
 public sealed record ShiftEdit(Guid? Id, DateTime StartedUtc, DateTime EndedUtc,
     IReadOnlyList<BreakPeriod> Breaks);
 
+public sealed record ActiveShiftEdit(ShiftSnapshot Original, DateTime StartedUtc,
+    IReadOnlyList<BreakPeriod> Breaks);
+
 public sealed record TrackerSettings(long DefaultHourlyRateCents, string TimeZoneId);
 
 public sealed record ShiftReportRow(ShiftSnapshot Shift, DateTime PeriodStartUtc,

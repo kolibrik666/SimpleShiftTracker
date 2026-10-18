@@ -30,7 +30,18 @@ public sealed class ShiftEditorViewModel : ObservableObject
     public TimestampViewModel Start { get; }
     public TimestampViewModel End { get; }
     public ObservableCollection<BreakViewModel> Breaks { get; } = [];
-    public string Title => original is null ? "Add a forgotten shift" : "Edit shift times";
+    public bool IsActive => original is { EndedUtc: null };
+    public bool IsCompleted => !IsActive;
+    public bool IsRunning => original?.State == ShiftState.Running;
+    public string Title => IsActive ? "Edit current timer" : original is null ? "Add a forgotten shift" : "Edit shift times";
+    public string SaveLabel => IsActive ? "Save time" : "Save shift";
+    public string BreaksLabel => IsActive ? "Completed breaks" : "Breaks";
+    public string NoBreaksLabel => original?.State == ShiftState.Paused
+        ? "No completed breaks. Your current break remains unpaid."
+        : "No breaks. The full shift counts as worked time.";
+    public string ActiveMessage => IsRunning
+        ? "Your timer keeps running while you edit. Saving keeps it running and includes the time spent here."
+        : "Your shift stays paused. Edit the start and completed breaks; your current break remains unpaid.";
     public string Subtitle => $"Dates and times in {zone.Id}. Breaks are unpaid.";
     public string RateLabel => $"Saved rate: {MainViewModel.Money(rate / 100m)} / hour";
     public string Preview { get => preview; private set => Set(ref preview, value); }
@@ -52,7 +63,7 @@ public sealed class ShiftEditorViewModel : ObservableObject
         var day = selectedMonth.Year == now.Year && selectedMonth.Month == now.Month
             ? now.Date.AddDays(-1) : selectedMonth.AddMonths(1).AddDays(-1);
         Start = new("Shift start", original?.StartedUtc ?? LocalTimes.Resolve(day.AddHours(9), zone), zone);
-        End = new("Shift end", original?.EndedUtc ?? LocalTimes.Resolve(day.AddHours(17), zone), zone);
+        End = new("Shift end", original?.EndedUtc ?? (IsActive ? service.NowUtc : LocalTimes.Resolve(day.AddHours(17), zone)), zone);
         Start.PropertyChanged += Changed;
         End.PropertyChanged += Changed;
         if (original is not null)
@@ -62,7 +73,7 @@ public sealed class ShiftEditorViewModel : ObservableObject
             try
             {
                 var start = Start.ResolveUtc();
-                var end = End.ResolveUtc();
+                var end = IsActive ? ShiftValidation.NormalizeActive(BuildActiveEdit(), service.NowUtc).EndedUtc : End.ResolveUtc();
                 if (end <= start) throw new TrackerValidationException("Set the shift start and end before adding a break.");
                 var breakStart = Breaks.Count > 0 ? Breaks[^1].End.ResolveUtc().AddMinutes(15) : start.AddSeconds(TimeMath.Seconds(start, end) / 2);
                 if (breakStart >= end) breakStart = start;
@@ -84,7 +95,7 @@ public sealed class ShiftEditorViewModel : ObservableObject
         });
         SaveCommand = new RelayCommand(_ =>
         {
-            try { saved(service.SaveShift(BuildEdit())); }
+            try { saved(IsActive ? service.SaveActiveShift(BuildActiveEdit()) : service.SaveShift(BuildEdit())); }
             catch (Exception exception) { App.Log(exception); Error = UiErrors.Describe(exception); }
         }, _ => valid);
         RefreshPreview();
@@ -93,7 +104,14 @@ public sealed class ShiftEditorViewModel : ObservableObject
     private ShiftEdit BuildEdit() => new(original?.Id, Start.ResolveUtc(), End.ResolveUtc(),
         Breaks.Select(b => new BreakPeriod(b.Start.ResolveUtc(), b.End.ResolveUtc())).ToArray());
 
-    private void Changed(object? sender, PropertyChangedEventArgs e) => RefreshPreview();
+    private ActiveShiftEdit BuildActiveEdit() => new(original!, Start.ResolveUtc(),
+        Breaks.Select(b => new BreakPeriod(b.Start.ResolveUtc(), b.End.ResolveUtc())).ToArray());
+
+    private void Changed(object? sender, PropertyChangedEventArgs e)
+    {
+        Error = "";
+        RefreshPreview();
+    }
 
     private void AddBreak(BreakViewModel item)
     {
@@ -109,15 +127,15 @@ public sealed class ShiftEditorViewModel : ObservableObject
         Raise(nameof(HasNoBreaks));
     }
 
-    private void RefreshPreview()
+    public void RefreshPreview()
     {
         try
         {
-            var edit = ShiftValidation.Normalize(BuildEdit(), service.NowUtc);
+            var edit = IsActive ? ShiftValidation.NormalizeActive(BuildActiveEdit(), service.NowUtc)
+                : ShiftValidation.Normalize(BuildEdit(), service.NowUtc);
             var worked = TimeMath.Seconds(edit.StartedUtc, edit.EndedUtc) - edit.Breaks.Sum(b => TimeMath.Seconds(b.StartedUtc, b.EndedUtc));
             Preview = $"{TimeMath.Duration(worked)} worked   ·   {MainViewModel.Money(TimeMath.Earnings(worked, rate))} earned";
             valid = true;
-            Error = "";
         }
         catch (TrackerValidationException exception) { Preview = exception.Message; valid = false; }
         CommandManager.InvalidateRequerySuggested();

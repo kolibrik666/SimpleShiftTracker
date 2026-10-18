@@ -12,7 +12,8 @@ The unpacked release is also in `artifacts/publish/win-x64/`. Keep its supportin
 
 - **Start shift** begins paid time.
 - **Pause** starts an unpaid break. **Resume** continues the same shift.
-- **End shift** finishes it and makes its times editable. Ending while paused keeps the break unpaid.
+- **Edit time** beside the current timer corrects its start and completed unpaid breaks while working or paused. The timer and earnings preview keep updating while you edit; saving includes time spent in the editor and preserves whether you were working or paused. Cancel leaves the saved times unchanged.
+- **End shift** finishes it. Ending while paused keeps the break unpaid.
 - Closing the app, signing out, shutting down Windows, or sleeping the PC pauses an unfinished shift. Reopening or waking leaves it paused. Minimizing keeps it running.
 - Only one shift can be unfinished at a time.
 
@@ -32,7 +33,9 @@ Use the month arrows or date picker to browse your history. **This month** retur
 
 **Edit** changes a completed shift's start, end, and individual unpaid breaks. **Add shift** records forgotten work; it defaults to yesterday, or the end of the selected past month. Dates use **day/month/year** and times use **24-hour HH:mm:ss**. The preview updates before saving.
 
-Breaks must stay inside the shift and cannot overlap. Completed shifts cannot overlap or end in the future. End an unfinished shift before editing or deleting it. Deletion asks for confirmation. Changes immediately recalculate the relevant months.
+The history row's **Edit** button also works for your unfinished shift. It has no end time until you end it. When paused, its ongoing break stays unpaid; corrections cover the time up to when that break began. If the shift pauses or recovers while an editor is open, cancel and reopen it to use the latest state.
+
+Breaks must stay inside the shift and cannot overlap. Shifts cannot overlap, and completed shifts cannot end in the future. End an unfinished shift before deleting it. Deletion asks for confirmation. Changes immediately recalculate the timer, earnings, and relevant months while retaining the shift's saved hourly rate.
 
 If a local time occurs twice when daylight saving ends, choose the intended UTC offset. A local time skipped when clocks move forward is rejected.
 
@@ -56,7 +59,7 @@ Data is stored at `%LOCALAPPDATA%\SimpleShiftTracker\tracker.db`. Settings shows
 
 To back up, **close the app**, then copy `tracker.db` somewhere safe. To restore, close the app and replace the database with your backup. Updating the app folder does not replace your database. CSV files are reports, not restorable database backups.
 
-State changes save immediately using database transactions. While running, the app saves a checkpoint every 15 seconds. If it crashes or is forcibly terminated, the shift is restored paused at its last checkpoint. A missed sleep event, a tracking gap over 45 seconds, or a backwards clock change also pauses it at the last checkpoint. The recovery notice tells you to review the times after ending the shift. The most recent unsaved seconds may need correction.
+State changes save immediately using database transactions. While running, the app saves a checkpoint every 15 seconds. If it crashes or is forcibly terminated, the shift is restored paused at its last checkpoint. A missed sleep event, a tracking gap over 45 seconds, or a backwards clock change also pauses it at the last checkpoint. Use **Edit time** to review the recovered shift. The most recent unsaved seconds may need correction.
 
 Storage failures show an error and preserve existing data. Diagnostic details go to `tracker.log` beside the database. Database migrations run when the app starts; an interrupted upgrade can be retried on the next launch. Back up before updating to future versions.
 

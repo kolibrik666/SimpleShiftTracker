@@ -29,7 +29,7 @@ public partial class MainWindow : Window
         this.database = database;
         viewModel = new(service, EditShift, ShowSettings, Export, text => MessageBox.Show(this, text, "Delete shift?", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No) == MessageBoxResult.Yes);
         DataContext = viewModel;
-        if (recovered) viewModel.Notify("An interrupted shift was recovered and paused at its last checkpoint. Review its times after ending it.");
+        if (recovered) viewModel.Notify("An interrupted shift was recovered and paused at its last checkpoint. Use Edit time to review its times.");
         lastCheckpoint = service.NowUtc;
         timer = new DispatcherTimer(TimeSpan.FromSeconds(1), DispatcherPriority.Background, Tick, Dispatcher);
         SystemEvents.PowerModeChanged += PowerModeChanged;

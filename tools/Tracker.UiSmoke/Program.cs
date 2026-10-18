@@ -92,6 +92,7 @@ internal static class Program
         main.RestoreFromTray();
         Check(main.WindowState == WindowState.Maximized, "A maximized window must restore maximized.");
         main.WindowState = WindowState.Normal;
+        ExerciseActiveEditor(app, main, vm, service);
         await Task.Delay(1200);
         vm.PauseCommand.Execute(null);
         Check(vm.IsPaused, "Pause must update the UI.");
@@ -264,8 +265,97 @@ internal static class Program
         Check(service.GetActiveShift()?.State == ShiftState.Paused, "Exiting from the tray must pause and save the unfinished shift.");
         Check(!reopened.IsTrayIconVisible, "Exiting must dispose the tray icon.");
         Check(BindingErrors.Count == 0, "WPF binding errors:\n" + string.Join("\n", BindingErrors));
-        File.WriteAllText(Path.Combine(output, "passed.txt"), "Passed: startup, history, timer controls, minimize-to-tray, hidden-window checkpoints, normal/maximized restore, second-launch restore signal, paused-shift minimize, tray exit and cleanup, editor and breaks, invalid dates/times, daylight-saving offset choices, overlap validation, manual entries, wage settings, month navigation, scrolling, keyboard navigation, system pause, closing, reopening, and WPF bindings.\n");
+        File.WriteAllText(Path.Combine(output, "passed.txt"), "Passed: startup, history, timer controls, active timer editing while running and paused, live editor preview, edit cancellation, active history controls, minimize-to-tray, hidden-window checkpoints, normal/maximized restore, second-launch restore signal, paused-shift minimize, tray exit and cleanup, editor and breaks, invalid dates/times, daylight-saving offset choices, overlap validation, manual entries, wage settings, month navigation, scrolling, keyboard navigation, system pause, closing, reopening, and WPF bindings.\n");
         Console.WriteLine("UI smoke passed: " + output);
+    }
+
+    private static void ExerciseActiveEditor(Application app, MainWindow main, MainViewModel vm, TrackerService service)
+    {
+        var original = service.GetActiveShift()!;
+        Check(vm.EditCurrentCommand.CanExecute(null), "The current running timer must be editable.");
+        var row = vm.Rows.Single(r => r.Row.Shift.Id == original.Id);
+        Check(vm.EditCommand.CanExecute(row) && !vm.DeleteCommand.CanExecute(row), "An active history row can be edited but cannot be deleted.");
+        Exception? dialogError = null;
+        main.Dispatcher.BeginInvoke(new Action(async () =>
+        {
+            var editor = app.Windows.OfType<ShiftEditorWindow>().Single();
+            try
+            {
+                await Settle();
+                var editVm = (ShiftEditorViewModel)editor.DataContext;
+                Check(editVm.IsActive && editVm.IsRunning && !editVm.IsCompleted, "A running shift needs the active editor.");
+                Check(!Descendants<DatePicker>(editor).Any(p => ReferenceEquals(p.DataContext, editVm.End) && p.IsVisible), "An unfinished shift must not expose a completed end time.");
+                SetTimestamp(editVm.Start, service.NowUtc.AddHours(1), vm.Zone);
+                Check(!editVm.SaveCommand.CanExecute(null), "A future start must disable Save.");
+                SetTimestamp(editVm.Start, original.StartedUtc.AddHours(-1), vm.Zone);
+                editVm.AddBreakCommand.Execute(null);
+                Check(editVm.Breaks.Count == 1, "A running shift can add a forgotten break.");
+                SetTimestamp(editVm.Breaks[0].Start, original.StartedUtc.AddMinutes(-30), vm.Zone);
+                SetTimestamp(editVm.Breaks[0].End, original.StartedUtc.AddMinutes(-15), vm.Zone);
+                var preview = editVm.Preview;
+                await Task.Delay(2200);
+                Check(editVm.Preview != preview, "The editor preview must keep counting while working.");
+                Check(service.GetActiveShift()!.State == ShiftState.Running, "Opening the editor must keep the shift running.");
+                Capture(editor, "running-editor");
+                Check(editVm.SaveCommand.CanExecute(null), "Valid running times must be saveable.");
+                editVm.SaveCommand.Execute(null);
+                Check(editor.SavedShift?.State == ShiftState.Running, "Saving the current timer must leave it running.");
+            }
+            catch (Exception exception) { dialogError = exception; editor.Close(); }
+        }), DispatcherPriority.ApplicationIdle);
+        vm.EditCurrentCommand.Execute(null); // Exercise the actual main-window command and modal dialog.
+        if (dialogError is not null) throw dialogError;
+        Check(vm.IsRunning, "Saving must refresh the main view without stopping its timer.");
+        var edited = service.GetActiveShift()!;
+        Check(edited.StartedUtc == original.StartedUtc.AddHours(-1), "The corrected start must persist.");
+        Check(edited.WorkedSeconds(service.NowUtc) == original.WorkedSeconds(service.NowUtc) + 2700,
+            "Saving must include the time spent in the editor and subtract the edited break.");
+
+        main.Dispatcher.BeginInvoke(new Action(() =>
+        {
+            var editor = app.Windows.OfType<ShiftEditorWindow>().Single();
+            try
+            {
+                var editVm = (ShiftEditorViewModel)editor.DataContext;
+                SetTimestamp(editVm.Start, edited.StartedUtc.AddHours(-5), vm.Zone);
+                editor.DialogResult = false;
+            }
+            catch (Exception exception) { dialogError = exception; editor.Close(); }
+        }), DispatcherPriority.ApplicationIdle);
+        vm.EditCurrentCommand.Execute(null);
+        if (dialogError is not null) throw dialogError;
+        var afterCancel = service.GetActiveShift()!;
+        Check(afterCancel.StartedUtc == edited.StartedUtc && afterCancel.WorkPeriods.SequenceEqual(edited.WorkPeriods),
+            "Cancel must preserve the saved times and breaks.");
+
+        vm.PauseCommand.Execute(null);
+        var paused = service.GetActiveShift()!;
+        main.Dispatcher.BeginInvoke(new Action(() =>
+        {
+            var editor = app.Windows.OfType<ShiftEditorWindow>().Single();
+            try
+            {
+                var editVm = (ShiftEditorViewModel)editor.DataContext;
+                Check(editVm.IsActive && !editVm.IsRunning, "A paused shift must also use the active editor.");
+                SetTimestamp(editVm.Start, paused.StartedUtc.AddMinutes(-5), vm.Zone);
+                Capture(editor, "paused-editor");
+                editVm.SaveCommand.Execute(null);
+                Check(editor.SavedShift?.State == ShiftState.Paused, "Saving a paused shift must keep it paused.");
+            }
+            catch (Exception exception) { dialogError = exception; editor.Close(); }
+        }), DispatcherPriority.ApplicationIdle);
+        vm.EditCurrentCommand.Execute(null);
+        if (dialogError is not null) throw dialogError;
+        Check(vm.IsPaused && service.GetActiveShift()!.WorkedSeconds(service.NowUtc) == paused.WorkedSeconds(service.NowUtc) + 300,
+            "A paused edit must update worked time without billing the current break.");
+        vm.ResumeCommand.Execute(null);
+    }
+
+    private static void SetTimestamp(TimestampViewModel target, DateTime utc, TimeZoneInfo zone)
+    {
+        var local = LocalTimes.Display(utc, zone);
+        target.Date = local.Date;
+        target.TimeText = local.ToString("HH:mm:ss", CultureInfo.InvariantCulture);
     }
 
     private static async Task Settle() => await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);

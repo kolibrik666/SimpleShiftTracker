@@ -13,14 +13,16 @@
                 <Border Style="{StaticResource Card}" Padding="20">
                     <Grid>
                         <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="20" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                        <ContentControl Content="{Binding Start}" /><ContentControl Grid.Column="2" Content="{Binding End}" />
+                        <ContentControl Content="{Binding Start}" />
+                        <ContentControl Grid.Column="2" Content="{Binding End}" Visibility="{Binding IsCompleted, Converter={StaticResource BoolVisibility}}" />
+                        <TextBlock Grid.Column="2" Text="{Binding ActiveMessage}" TextWrapping="Wrap" Style="{StaticResource Muted}" VerticalAlignment="Center" Visibility="{Binding IsActive, Converter={StaticResource BoolVisibility}}" />
                     </Grid>
                 </Border>
                 <DockPanel Margin="0,22,0,12">
                     <Button DockPanel.Dock="Right" Content="+  Add break" Command="{Binding AddBreakCommand}" Style="{StaticResource SmallButton}" />
-                    <TextBlock Text="Breaks" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center" />
+                    <TextBlock Text="{Binding BreaksLabel}" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center" />
                 </DockPanel>
-                <TextBlock Text="No breaks. The full shift counts as worked time." Style="{StaticResource Muted}" Margin="0,0,0,12" Visibility="{Binding HasNoBreaks, Converter={StaticResource BoolVisibility}}" />
+                <TextBlock Text="{Binding NoBreaksLabel}" Style="{StaticResource Muted}" Margin="0,0,0,12" Visibility="{Binding HasNoBreaks, Converter={StaticResource BoolVisibility}}" />
                 <ItemsControl ItemsSource="{Binding Breaks}"><ItemsControl.ItemTemplate><DataTemplate>
                     <Border Style="{StaticResource Card}" Padding="20" Margin="0,0,0,12"><StackPanel>
                         <DockPanel Margin="0,0,0,12">
@@ -42,7 +44,7 @@
             </StackPanel></Border>
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                 <Button Content="Cancel" IsCancel="True" MinWidth="100" Margin="0,0,10,0" />
-                <Button Content="Save shift" Command="{Binding SaveCommand}" Style="{StaticResource PrimaryButton}" MinWidth="136" IsDefault="True" />
+                <Button Content="{Binding SaveLabel}" Command="{Binding SaveCommand}" Style="{StaticResource PrimaryButton}" MinWidth="136" IsDefault="True" />
             </StackPanel>
         </StackPanel>
     </Grid>

@@ -9,7 +9,7 @@
     <UseWindowsForms>true</UseWindowsForms>
     <AssemblyName>SimpleShiftTracker</AssemblyName>
     <Product>Simple Shift Tracker</Product>
-    <Version>1.0.1</Version>
+    <Version>1.0.2</Version>
     <ApplicationIcon>Assets/Tracker.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>

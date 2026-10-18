@@ -1,4 +1,5 @@
 using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
 using Tracker.Core;
 
 namespace Tracker.Tests;
@@ -227,7 +228,7 @@ public sealed class TrackerTests : IDisposable
     }
 
     [Fact]
-    public void CannotEditDeleteOrOverlapUnfinishedShift()
+    public void CompletedShiftEditorCannotEndAnUnfinishedShiftAndDeletionOrOverlapIsBlocked()
     {
         var shift = service.StartShift();
         clock.Advance(60);
@@ -235,6 +236,170 @@ public sealed class TrackerTests : IDisposable
         Assert.Throws<TrackerValidationException>(() =>
             service.SaveShift(new(shift.Id, shift.StartedUtc, service.NowUtc, [])));
         Assert.Throws<TrackerValidationException>(() => Add(shift.StartedUtc, service.NowUtc));
+    }
+
+    [Fact]
+    public void RunningTimeEditPreservesIdentityRateAndTimeSpentInEditor()
+    {
+        var start = service.StartShift().StartedUtc;
+        clock.Advance(600); service.PauseShift();
+        clock.Advance(300); service.ResumeShift();
+        for (var i = 0; i < 40; i++) { clock.Advance(15); service.Checkpoint(); }
+        var original = service.GetActiveShift()!;
+        service.SetHourlyRate(20);
+        clock.Advance(20); service.Checkpoint(); // A normal checkpoint must not invalidate the editor.
+        var edited = service.SaveActiveShift(new(original, start.AddMinutes(-10),
+            [new(start.AddMinutes(10), start.AddMinutes(20))]));
+        Assert.Equal(original.Id, edited.Id);
+        Assert.Equal(1000, edited.HourlyRateCents);
+        Assert.Null(edited.EndedUtc);
+        Assert.Equal(ShiftState.Running, edited.State);
+        Assert.Single(edited.WorkPeriods, p => p.EndedUtc is null);
+        Assert.Equal(1520, edited.WorkedSeconds(service.NowUtc));
+        Assert.Equal(service.NowUtc, edited.LastCheckpointUtc);
+        clock.Advance(7);
+        Assert.Equal(1527, service.GetActiveShift()!.WorkedSeconds(service.NowUtc));
+        Assert.Equal(1527, service.EndShift().WorkedSeconds(service.NowUtc));
+    }
+
+    [Fact]
+    public void PausedTimeEditPreservesOngoingUnpaidBreakAndCanResumeAfterReopening()
+    {
+        var start = service.StartShift().StartedUtc;
+        clock.Advance(600); service.PauseShift();
+        clock.Advance(600);
+        var original = service.GetActiveShift()!;
+        var edited = service.SaveActiveShift(new(original, start.AddMinutes(-10),
+            [new(start, start.AddMinutes(5))]));
+        Assert.Equal(ShiftState.Paused, edited.State);
+        Assert.Equal(900, edited.WorkedSeconds(service.NowUtc));
+        Assert.Equal(start.AddMinutes(10), edited.WorkPeriods[^1].EndedUtc);
+        clock.Advance(3600);
+        var reopened = new TrackerService(database, clock);
+        Assert.False(reopened.RecoverInterruptedShift());
+        Assert.Equal(900, reopened.GetActiveShift()!.WorkedSeconds(service.NowUtc));
+        reopened.ResumeShift(); clock.Advance(3);
+        Assert.Equal(903, reopened.EndShift().WorkedSeconds(service.NowUtc));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ZeroWorkedTimeEditStillAllowsPausingResumingAndEnding(bool paused)
+    {
+        var original = service.StartShift();
+        if (paused) original = service.PauseShift();
+        var edited = service.SaveActiveShift(new(original, original.StartedUtc, []));
+        Assert.Equal(paused ? ShiftState.Paused : ShiftState.Running, edited.State);
+        Assert.Equal(0, edited.WorkedSeconds(service.NowUtc));
+        service.PauseShift(); service.ResumeShift(); clock.Advance(1);
+        Assert.Equal(1, service.EndShift().WorkedSeconds(service.NowUtc));
+    }
+
+    [Fact]
+    public void RemovingAllPausedWorkRetainsCurrentBreakBoundary()
+    {
+        var start = service.StartShift().StartedUtc;
+        clock.Advance(60); service.PauseShift();
+        clock.Advance(60);
+        var original = service.GetActiveShift()!;
+        var edited = service.SaveActiveShift(new(original, start, [new(start, start.AddSeconds(60))]));
+        Assert.Equal(0, edited.WorkedSeconds(service.NowUtc));
+        Assert.Equal(start.AddSeconds(60), edited.WorkPeriods[^1].EndedUtc);
+        Assert.Equal(edited.GetBreaks(), service.GetActiveShift()!.GetBreaks());
+        var savedAgain = service.SaveActiveShift(new(edited, start, edited.GetBreaks()));
+        Assert.Equal(0, savedAgain.WorkedSeconds(service.NowUtc));
+        service.ResumeShift(); clock.Advance(5);
+        Assert.Equal(5, service.EndShift().WorkedSeconds(service.NowUtc));
+    }
+
+    [Fact]
+    public void InvalidActiveTimeEditsLeaveStoredTimesAndOtherShiftsUntouched()
+    {
+        var prior = Add(service.NowUtc.AddHours(-2), service.NowUtc.AddHours(-1));
+        var original = service.StartShift();
+        clock.Advance(60);
+        Assert.Throws<TrackerValidationException>(() => service.SaveActiveShift(new(original, prior.StartedUtc, [])));
+        Assert.Throws<TrackerValidationException>(() => service.SaveActiveShift(new(original, service.NowUtc.AddSeconds(1), [])));
+        Assert.Throws<TrackerValidationException>(() => service.SaveActiveShift(new(original, original.StartedUtc,
+            [new(original.StartedUtc, service.NowUtc.AddSeconds(1))])));
+        Assert.Throws<TrackerValidationException>(() => service.SaveActiveShift(new(original, original.StartedUtc,
+            [new(original.StartedUtc, original.StartedUtc.AddSeconds(40)),
+                new(original.StartedUtc.AddSeconds(30), service.NowUtc)])));
+        Assert.Equal(original.StartedUtc, service.GetActiveShift()!.StartedUtc);
+        Assert.True(original.WorkPeriods.SequenceEqual(service.GetActiveShift()!.WorkPeriods));
+        Assert.Equal(3660, service.GetMonthlyReport(2027, 1, Zone).WorkedSeconds);
+        var paused = service.PauseShift();
+        clock.Advance(60);
+        Assert.Throws<TrackerValidationException>(() => service.SaveActiveShift(new(paused, service.NowUtc, [])));
+        Assert.Equal(60, service.GetActiveShift()!.WorkedSeconds(service.NowUtc));
+    }
+
+    [Theory]
+    [InlineData("pause")]
+    [InlineData("recover")]
+    [InlineData("resume")]
+    [InlineData("end")]
+    [InlineData("edit")]
+    public void StaleActiveEditorCannotOverwriteStateChanges(string change)
+    {
+        var original = service.StartShift();
+        clock.Advance(15); service.Checkpoint();
+        if (change == "resume") original = service.PauseShift();
+        clock.Advance(1);
+        switch (change)
+        {
+            case "pause": service.PauseShift(); break;
+            case "recover": service.RecoverInterruptedShift(); break;
+            case "resume": service.ResumeShift(); break;
+            case "end": service.EndShift(); break;
+            case "edit": service.SaveActiveShift(new(original, original.StartedUtc.AddSeconds(-1), [])); break;
+        }
+        var before = service.GetMonthlyReport(2027, 1, Zone);
+        Assert.Throws<TrackerValidationException>(() => service.SaveActiveShift(new(original, original.StartedUtc.AddHours(-1), [])));
+        var after = service.GetMonthlyReport(2027, 1, Zone);
+        Assert.Equal(before.WorkedSeconds, after.WorkedSeconds);
+        Assert.Equal(before.Rows[0].Shift.StartedUtc, after.Rows[0].Shift.StartedUtc);
+        Assert.Equal(before.Rows[0].Shift.State, after.Rows[0].Shift.State);
+    }
+
+    [Fact]
+    public void FailedActiveSaveRollsBackDeletedIntervalsAndPreservesAllRecordedWork()
+    {
+        var prior = Add(service.NowUtc.AddHours(-2), service.NowUtc.AddHours(-1));
+        var original = service.StartShift();
+        clock.Advance(30);
+        using (var connection = new SqliteConnection($"Data Source={database.DatabasePath};Pooling=False"))
+        {
+            connection.Open();
+            using var command = connection.CreateCommand();
+            command.CommandText = "CREATE TRIGGER FailActiveInsert BEFORE INSERT ON WorkIntervals BEGIN SELECT RAISE(ABORT, 'Simulated write failure'); END;";
+            command.ExecuteNonQuery();
+        }
+        Assert.Throws<DbUpdateException>(() => service.SaveActiveShift(new(original, original.StartedUtc.AddMinutes(-10), [])));
+        var current = service.GetActiveShift()!;
+        Assert.Equal(original.Id, current.Id);
+        Assert.Equal(original.StartedUtc, current.StartedUtc);
+        Assert.Equal(original.LastCheckpointUtc, current.LastCheckpointUtc);
+        Assert.True(original.WorkPeriods.SequenceEqual(current.WorkPeriods));
+        Assert.Equal(ShiftState.Running, current.State);
+        var report = service.GetMonthlyReport(2027, 1, Zone);
+        Assert.Equal(3630, report.WorkedSeconds);
+        Assert.Equal(3600, report.Rows.Single(r => r.Shift.Id == prior.Id).WorkedSeconds);
+    }
+
+    [Fact]
+    public void ActiveEditRejectsBackwardsClockAndRecalculatesBothMonths()
+    {
+        var original = service.StartShift();
+        clock.Advance(15); service.Checkpoint();
+        clock.Advance(-5);
+        Assert.Throws<TrackerValidationException>(() => service.SaveActiveShift(new(original, original.StartedUtc, [])));
+        clock.Advance(5);
+        var decemberStart = Utc(2026, 12, 31, 22);
+        service.SaveActiveShift(new(original, decemberStart, []));
+        Assert.Equal(3600, service.GetMonthlyReport(2026, 12, Zone).WorkedSeconds);
+        Assert.Equal(TimeMath.Seconds(Utc(2026, 12, 31, 23), service.NowUtc), service.GetMonthlyReport(2027, 1, Zone).WorkedSeconds);
     }
 
     [Fact]

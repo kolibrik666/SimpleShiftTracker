@@ -40,9 +40,10 @@ public sealed class MainViewModel : ObservableObject
         PauseCommand = new RelayCommand(_ => Run(() => service.PauseShift(), "Shift paused. Break time is excluded."), _ => active?.State == ShiftState.Running);
         ResumeCommand = new RelayCommand(_ => Run(() => service.ResumeShift(), "Back to work. Your shift is running."), _ => active?.State == ShiftState.Paused);
         EndCommand = new RelayCommand(_ => Run(() => service.EndShift(), "Shift saved to your history."), _ => active is not null);
+        EditCurrentCommand = new RelayCommand(_ => Edit(service.GetActiveShift()), _ => active is not null);
         AddCommand = new RelayCommand(_ => Edit(null));
-        EditCommand = new RelayCommand(p => Edit(((HistoryRowViewModel)p!).Row.Shift), p => p is HistoryRowViewModel { CanEdit: true });
-        DeleteCommand = new RelayCommand(p => Delete((HistoryRowViewModel)p!), p => p is HistoryRowViewModel { CanEdit: true });
+        EditCommand = new RelayCommand(p => Edit(((HistoryRowViewModel)p!).Row.Shift), p => p is HistoryRowViewModel);
+        DeleteCommand = new RelayCommand(p => Delete((HistoryRowViewModel)p!), p => p is HistoryRowViewModel { CanDelete: true });
         SettingsCommand = new RelayCommand(_ => Run(() => settings()));
         ExportCommand = new RelayCommand(_ => Run(() => export(service.GetMonthlyReport(month.Year, month.Month, Zone), Zone)), _ => Rows.Count > 0);
         PreviousMonthCommand = new RelayCommand(_ => SelectedDate = month.AddMonths(-1), _ => month.Year > 1 || month.Month > 1);
@@ -104,6 +105,7 @@ public sealed class MainViewModel : ObservableObject
     public ICommand EndCommand { get; }
     public ICommand AddCommand { get; }
     public ICommand EditCommand { get; }
+    public ICommand EditCurrentCommand { get; }
     public ICommand DeleteCommand { get; }
     public ICommand SettingsCommand { get; }
     public ICommand ExportCommand { get; }
@@ -183,7 +185,7 @@ public sealed class MainViewModel : ObservableObject
 public sealed class HistoryRowViewModel(ShiftReportRow row, TimeZoneInfo zone) : ObservableObject
 {
     public ShiftReportRow Row { get; private set; } = row;
-    public bool CanEdit => Row.Shift.State == ShiftState.Ended;
+    public bool CanDelete => Row.Shift.State == ShiftState.Ended;
     public string Day => LocalTimes.Display(Row.Shift.StartedUtc, zone).ToString("ddd, dd MMM", CultureInfo.InvariantCulture);
     public string Detail => Row.Shift.State == ShiftState.Ended
         ? LocalTimes.Display(Row.Shift.StartedUtc, zone).ToString("yyyy", CultureInfo.InvariantCulture) : Row.Shift.State.ToString();
